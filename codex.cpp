@@ -4,6 +4,12 @@
  * Based on code from escape-utils by Brian Lopez
  * Copyright (c) 2010-2011 Brian Lopez - http://github.com/brianmario
 
+ * Based on code from wtf8 by Mikko Lehtonen
+ * Copyright (c) 2011-2012 Mikko Lehtonen - https://github.com/scoopr/wtf8
+
+ * Based on code from dfa by Bjoern Hoehrmann
+ * Copyright (c) 2008-2010 Bjoern Hoehrmann - http://bjoern.hoehrmann.de/utf-8/decoder/dfa/
+
  * Permission is hereby granted, free of charge, to any person obtaining
  * a copy of this software and associated documentation files (the
  * "Software"), to deal in the Software without restriction, including
@@ -30,6 +36,7 @@
  */
 
 #include <cassert>
+#include <cstdint>
 
 #include <iostream>
 #include <iomanip>
@@ -487,3 +494,167 @@ static_assert( int('a') == 97, "wrong text encoding" );
 #undef UN_HEX
 #undef HEX_F0
 #undef HEX_0F
+
+namespace utf8
+{
+    namespace
+    {
+        enum { UTF8_ACCEPT = 0, UTF8_REJECT = 12 };
+
+        // Decode utf8 codepoint a byte at a time. Uses explictly user provided state variable,
+        // that should be initialized to zero before first use. Places the result to codep.
+        // Returns UTF8_ACCEPT when a full codepoint achieved
+
+        uint32_t decode_state(uint32_t* state, uint32_t* codep, uint32_t byte)
+        {
+            static const uint8_t utf8d[] = {
+                // The first part of the table maps bytes to character classes that
+                // to reduce the size of the transition table and create bitmasks.
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,  9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,9,
+                7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,  7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,
+                8,8,2,2,2,2,2,2,2,2,2,2,2,2,2,2,  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
+                10,3,3,3,3,3,3,3,3,3,3,3,3,4,3,3, 11,6,6,6,5,8,8,8,8,8,8,8,8,8,8,8,
+
+                // The second part is a transition table that maps a combination
+                // of a state of the automaton and a character class to a state.
+                0,12,24,36,60,96,84,12,12,12,48,72, 12,12,12,12,12,12,12,12,12,12,12,12,
+                12, 0,12,12,12,12,12, 0,12, 0,12,12, 12,24,12,12,12,12,12,24,12,24,12,12,
+                12,12,12,12,12,12,12,24,12,12,12,12, 12,24,12,12,12,12,12,12,12,24,12,12,
+                12,12,12,12,12,12,12,36,12,36,12,12, 12,36,12,12,12,12,12,36,12,36,12,12,
+                12,36,12,12,12,12,12,12,12,12,12,12,
+            };
+
+            uint32_t type = utf8d[byte];
+
+            *codep = (*state != UTF8_ACCEPT) ?
+            (byte & 0x3fu) | (*codep << 6) :
+            (0xff >> type) & (byte);
+
+            *state = utf8d[256 + *state + type];
+            return *state;
+        }
+    } // anon::
+
+
+    /** Decode a utf8 codepoint from a byte array. Reads maximum of maxbytes from str.
+      * Places the result to result
+      * @return The start of next codepoint sequence
+      */
+    const char* decode(const char* str, int maxbytes, uint32_t* result) {
+
+        const unsigned char* ustr = (unsigned char*)str;
+        uint32_t state = 0;
+        while(maxbytes--) {
+            uint32_t res = decode_state(&state, result, *ustr);
+            ustr++;
+            if(res == UTF8_ACCEPT) return (const char*)ustr;
+            else if(res == UTF8_REJECT) { *result=0xfffd; return (const char*)ustr; }
+        }
+
+        *result = 0xfffd;
+
+        return (const char*)ustr;
+
+    }
+
+    const char* encode(uint32_t codepoint, char* str) {
+
+        unsigned char* ustr = (unsigned char*)str;
+        if( codepoint <= 0x7f) {
+            ustr[0] = (unsigned char)codepoint;
+            ustr+=1;
+        } else if( codepoint <= 0x7ff ) {
+            ustr[0] = (unsigned char) (0xc0 + (codepoint >> 6));
+            ustr[1] = (unsigned char) (0x80 + (codepoint & 0x3f));
+            ustr+=2;
+        } else if( codepoint <= 0xffff) {
+            ustr[0] = (unsigned char) (0xe0 + (codepoint >> 12));
+            ustr[1] = (unsigned char) (0x80 + ((codepoint >> 6) & 63));
+            ustr[2] = (unsigned char) (0x80 + (codepoint & 63));
+            ustr+=3;
+        } else if( codepoint <= 0x1ffff) {
+            ustr[0] = (unsigned char) (0xf0 + (codepoint >> 18));
+            ustr[1] = (unsigned char) (0x80 + ((codepoint >> 12) & 0x3f));
+            ustr[2] = (unsigned char) (0x80 + ((codepoint >> 6) & 0x3f));
+            ustr[3] = (unsigned char) (0x80 + (codepoint & 0x3f));
+            ustr+=4;
+        }
+
+        return (char*)ustr;
+    }
+
+    int strlen(const char* str) {
+
+        int count = 0;
+        uint32_t state = 0;
+
+        const unsigned char* ustr = (unsigned char*)str;
+        uint32_t tmp;
+        while(*ustr != 0) {
+            uint32_t res = decode_state(&state, &tmp, *ustr);
+            ustr++;
+            if(res == UTF8_ACCEPT) { count++; }
+            else if(res == UTF8_REJECT) { count++; }
+        }
+
+        return count;
+    }
+
+    int strnlen(const char* str, int bytes) {
+
+        int count = 0;
+        uint32_t state = 0;
+        uint32_t res;
+
+        const unsigned char* ustr = (unsigned char*)str;
+        uint32_t tmp;
+        while(bytes--) {
+            if(*ustr == 0) break;
+            res = decode_state(&state, &tmp, *ustr);
+            ustr++;
+            if(res == UTF8_ACCEPT) { count++; }
+            else if(res == UTF8_REJECT) { count++; }
+        }
+
+        return count;
+    }
+
+    bool is_continuation_byte(int byte) {
+        return (byte & 0xc0) == 0x80;
+    }
+
+    bool is_initial_byte(int byte) {
+        return (byte & 0x80) == 0 || (byte & 0xc0) == 0xc0;
+    }
+} // wtf8
+
+
+/*
+    utf32 to utf16
+--------------------------
+    std::wstring wstr()
+    {
+        std::wstring ws = L"";
+
+        for( size_t i = 0; i < this->size(); ++i )
+        {
+            unsigned int codepoint = this->operator[]( i );
+
+            if (codepoint > 0xffff)
+            {
+                ws += (unsigned short)(0xD7C0 + (codepoint >> 10));
+                ws += (unsigned short)(0xDC00 + (codepoint & 0x3FF));
+            }
+            else
+            {
+                ws += (unsigned short)codepoint;
+            }
+        }
+
+        return ws;
+    }
+*/

@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 #include <string>
 
 namespace escape
@@ -46,3 +47,13 @@ namespace encode
 
 namespace decode
 {}
+
+namespace utf8
+{
+    const char* decode(const char* str, int maxbytes, std::uint32_t* result);
+    const char* encode(std::uint32_t codepoint, char* str);
+    int strlen(const char* str);
+    int strnlen(const char* str, int bytes);
+    bool is_continuation_byte(int byte);
+    bool is_initial_byte(int byte);
+}
