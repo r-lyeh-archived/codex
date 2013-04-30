@@ -1,5 +1,8 @@
 #include <cassert>
 #include <cstdint>
+#include <cstdio>
+#include <cstring>
+
 #include <iostream>
 #include <string>
 #include "codex.hpp"
@@ -22,7 +25,7 @@ int main( int argc, const char **argv )
 
 #define joint2(n,l) n##l
 #define joint(n,l) joint2(n,l)
-#define test(desc) void joint(fn,__LINE__)(); const int joint(var,__LINE__) = printf("%s ... %s\n", desc, (joint(fn,__LINE__)(), "OK") ); void joint(fn,__LINE__)()
+#define test(desc) void joint(fn,__LINE__)(); const int joint(var,__LINE__) = std::printf("%s ... %s\n", desc, (joint(fn,__LINE__)(), "OK") ); void joint(fn,__LINE__)()
 
 test("utf8::decode() should decode codepoint from utf8 string in the single octet range 00-7f")
 {
@@ -288,7 +291,7 @@ test("utf8::encode() should encode all valid codepoints to utf8")
         // Skip surrogates, as they are not allowed in utf8
         if( i >= 0xd800 && i <= 0xdfff ) continue;
 
-        memset(buf, 0, 8);
+        std::memset(buf, 0, 8);
 
         const char* ret1 = utf8::encode(i, buf);
         uint32_t res = 0;

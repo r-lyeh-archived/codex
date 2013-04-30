@@ -37,6 +37,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <cstring>
 
 #include <iostream>
 #include <iomanip>
@@ -95,7 +96,7 @@ namespace {
         }
 
         void clear( bool value = false ) {
-          memset( map, value ? 0xFF : 0x00, N/8 );
+          std::memset( map, value ? 0xFF : 0x00, N/8 );
         }
     };
 
@@ -459,9 +460,11 @@ namespace encode
         std::string quote( const std::string &text ) {
             std::string out;
             out.reserve( text.size() );
-            for( auto &in : text )
+            for( auto it = text.begin(), end = text.end(); it != end; ++it ) {
+                const char &in = *it;
                 if( in == '\"' )    out += "\\\"";
                 else                out += in;
+            }
             return out;
         }
         std::string quote( const std::string &key, const std::string &value ) {
